@@ -80,13 +80,37 @@ class MambaS6Layer(nn.Module):
         return self.out_proj(y)
 
 
+class BidirectionalMambaLayer(nn.Module):
+    """Fuse forward and backward Mamba passes for richer sequence context."""
+
+    def __init__(self, d_model, d_state=16, d_conv=3, expand=2, dropout=0.0):
+        super().__init__()
+        self.forward_mamba = MambaS6Layer(d_model=d_model, d_state=d_state, d_conv=d_conv, expand=expand)
+        self.backward_mamba = MambaS6Layer(d_model=d_model, d_state=d_state, d_conv=d_conv, expand=expand)
+        self.fusion = nn.Sequential(
+            nn.Linear(d_model * 2, d_model * 2),
+            nn.GLU(dim=-1),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x):
+        forward_states = self.forward_mamba(x)
+
+        reversed_x = torch.flip(x, dims=[1])
+        backward_states = self.backward_mamba(reversed_x)
+        backward_states = torch.flip(backward_states, dims=[1])
+
+        return self.fusion(torch.cat([forward_states, backward_states], dim=-1))
+
+
 class MambaBlock(nn.Module):
     def __init__(self, d_model=64, d_state=16, dropout=0.15, drop_path=0.0):
         super().__init__()
         self.norm1 = nn.LayerNorm(d_model)
-        self.ssm = MambaS6Layer(d_model=d_model, d_state=d_state)
+        self.ssm = BidirectionalMambaLayer(d_model=d_model, d_state=d_state, dropout=dropout)
         self.drop1 = nn.Dropout(dropout)
         self.drop_path1 = DropPath(drop_path)
+        self.layer_scale1 = nn.Parameter(torch.ones(d_model) * 1e-3)
 
         self.norm2 = nn.LayerNorm(d_model)
         self.ffn = nn.Sequential(
@@ -97,11 +121,32 @@ class MambaBlock(nn.Module):
         )
         self.drop2 = nn.Dropout(dropout)
         self.drop_path2 = DropPath(drop_path)
+        self.layer_scale2 = nn.Parameter(torch.ones(d_model) * 1e-3)
 
     def forward(self, x):
-        x = x + self.drop_path1(self.drop1(self.ssm(self.norm1(x))))
-        x = x + self.drop_path2(self.drop2(self.ffn(self.norm2(x))))
+        x = x + self.drop_path1(self.drop1(self.ssm(self.norm1(x)) * self.layer_scale1.view(1, 1, -1)))
+        x = x + self.drop_path2(self.drop2(self.ffn(self.norm2(x)) * self.layer_scale2.view(1, 1, -1)))
         return x
+
+
+class AttentionPooling1D(nn.Module):
+    """Learned attention pooling that keeps informative time steps."""
+
+    def __init__(self, d_model, hidden_dim=None, dropout=0.1):
+        super().__init__()
+        hidden_dim = hidden_dim or d_model
+        self.norm = nn.LayerNorm(d_model)
+        self.score = nn.Sequential(
+            nn.Linear(d_model, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, x):
+        scores = self.score(self.norm(x)).squeeze(-1)
+        weights = F.softmax(scores, dim=1)
+        return torch.sum(x * weights.unsqueeze(-1), dim=1)
 
 
 class ConvBNAct(nn.Module):
@@ -141,8 +186,8 @@ class CNNFeatureExtractor(nn.Module):
         return x
 
 
-class CNNMamba(nn.Module):
-    """CNN + Mamba classifier for inputs of shape (B, 1000, 10)."""
+class CNNBiMambaAttention(nn.Module):
+    """CNN + bidirectional Mamba classifier for inputs of shape (B, 1000, 10)."""
 
     def __init__(
         self,
@@ -153,6 +198,8 @@ class CNNMamba(nn.Module):
         stem_dropout=0.1,
         head_dropout=0.25,
         drop_path_rate=0.1,
+        feature_dropout=0.1,
+        pool_dropout=0.1,
     ):
         super().__init__()
         seq_len, in_channels = input_shape
@@ -179,13 +226,16 @@ class CNNMamba(nn.Module):
         )
 
         self.post_mamba_norm = nn.LayerNorm(64)
+        self.feature_dropout = nn.Dropout1d(feature_dropout)
+        self.attention_pool = AttentionPooling1D(d_model=64, hidden_dim=64, dropout=pool_dropout)
 
-        # Classification head: global average pooling + bottleneck classifier
+        # Classification head: attention pooling with residual global context.
         self.classifier = nn.Sequential(
-            nn.Linear(64, 64),
+            nn.LayerNorm(64),
+            nn.Linear(64, 96),
             nn.GELU(),
             nn.Dropout(head_dropout),
-            nn.Linear(64, num_classes),
+            nn.Linear(96, num_classes),
         )
 
     def forward(self, x):
@@ -194,6 +244,7 @@ class CNNMamba(nn.Module):
 
         # CNN module
         x = self.feature_extractor(x)
+        x = self.feature_dropout(x)
 
         # (B, 64, 250) -> (B, 250, 64)
         x = x.transpose(1, 2)
@@ -204,12 +255,12 @@ class CNNMamba(nn.Module):
 
         x = self.post_mamba_norm(x)
 
-        # Global average pooling over sequence length: (B, 250, 64) -> (B, 64)
-        x = x.mean(dim=1)
+        # Attention pooling over sequence length with a residual mean summary.
+        x = self.attention_pool(x) + x.mean(dim=1)
         return self.classifier(x)
 
 
-def build_cnn_mamba_model(
+def build_cnn_bimamba_attention_model(
     input_shape=(1000, 10),
     num_classes=8,
     num_mamba_layers=2,
@@ -217,8 +268,10 @@ def build_cnn_mamba_model(
     stem_dropout=0.1,
     head_dropout=0.25,
     drop_path_rate=0.1,
+    feature_dropout=0.1,
+    pool_dropout=0.1,
 ):
-    return CNNMamba(
+    return CNNBiMambaAttention(
         input_shape=input_shape,
         num_classes=num_classes,
         num_mamba_layers=num_mamba_layers,
@@ -226,4 +279,6 @@ def build_cnn_mamba_model(
         stem_dropout=stem_dropout,
         head_dropout=head_dropout,
         drop_path_rate=drop_path_rate,
+        feature_dropout=feature_dropout,
+        pool_dropout=pool_dropout,
     )

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# python huawei_bin_preprocess.py --input-dir ../datasets/raw/huawei --output-dir ../datasets/processed/huawei
 from __future__ import annotations
 
 import argparse

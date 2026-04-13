@@ -1,7 +1,22 @@
-export function createTelemetrySocket({ onMessage, onStatus }) {
-  const wsUrl =
-    import.meta.env.VITE_WS_URL ||
-    'ws://127.0.0.1:5000/ws/telemetry';
+import { getApiBaseUrl } from './api';
+
+function buildWsUrl(token) {
+  const rawUrl = import.meta.env.VITE_WS_URL;
+  const baseUrl = rawUrl ? new URL(rawUrl) : new URL(getApiBaseUrl());
+
+  baseUrl.protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+  if (!rawUrl) {
+    baseUrl.pathname = '/ws/telemetry';
+  }
+  if (token) {
+    baseUrl.searchParams.set('token', token);
+  }
+
+  return baseUrl.toString();
+}
+
+export function createTelemetrySocket({ token, onMessage, onStatus, onUnauthorized }) {
+  const wsUrl = buildWsUrl(token);
 
   let ws = null;
   let reconnectTimer = null;
@@ -28,8 +43,13 @@ export function createTelemetrySocket({ onMessage, onStatus }) {
       onStatus?.('error');
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       onStatus?.('disconnected');
+      if (event.code === 4401 || event.code === 4403 || event.code === 1008) {
+        shouldReconnect = false;
+        onUnauthorized?.();
+        return;
+      }
       if (!shouldReconnect) {
         return;
       }
