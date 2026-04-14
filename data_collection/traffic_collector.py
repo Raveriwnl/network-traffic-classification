@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
+# sudo -E python traffic_collector.py --iface any --duration 60 --capture-label live --bpf-filter "tcp or udp" --output-dir ../datasets/raw/mydata
 from __future__ import annotations
 
 import argparse
 import csv
 import json
 import re
+import socket
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from scapy.all import DNS, DNSQR, IP, IPv6, Raw, TCP, UDP, get_if_addr, sniff  # pyright: ignore[reportMissingImports]
+from scapy.all import DNS, DNSQR, IP, IPv6, Raw, TCP, UDP, conf, get_if_addr, get_if_list, sniff  # pyright: ignore[reportMissingImports]
+from scapy.interfaces import resolve_iface  # pyright: ignore[reportMissingImports]
 
 
 DEFAULT_TARGET_CLASSES = [
@@ -170,7 +173,7 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--output-dir",
 		type=Path,
-		default=Path("datasets/raw/huawei"),
+		default=Path("../datasets/raw/mydata"),
 		help="Directory for output CSV/JSON files.",
 	)
 	parser.add_argument(
@@ -215,6 +218,53 @@ def load_class_keywords(path: Path | None) -> dict[str, list[str]]:
 	return normalized
 
 
+def resolve_capture_interfaces(iface_arg: str | None) -> tuple[str | list[str] | None, list[str], str]:
+	iface_name = (iface_arg or "").strip()
+	if not iface_name:
+		default_iface = str(conf.iface)
+		return None, [default_iface], default_iface
+
+	if iface_name.lower() == "any":
+		available_ifaces = [name for name in get_if_list() if name]
+		if not available_ifaces:
+			raise ValueError("No capture interfaces are available on this host.")
+		return available_ifaces, available_ifaces, "any"
+
+	try:
+		resolve_iface(iface_name)
+	except ValueError as exc:
+		available_ifaces = ", ".join(get_if_list()) or "<none>"
+		raise ValueError(
+			f"Interface '{iface_name}' not found. Available interfaces: {available_ifaces}. "
+			"Use --iface any to capture on all interfaces."
+		) from exc
+
+	return iface_name, [iface_name], iface_name
+
+
+def collect_local_ips(ifaces: list[str]) -> set[str]:
+	local_ips = {"127.0.0.1", "::1"}
+	for iface_name in ifaces:
+		try:
+			iface_ip = get_if_addr(iface_name)
+		except Exception:
+			continue
+		if iface_ip and iface_ip != "0.0.0.0":
+			local_ips.add(iface_ip)
+
+	try:
+		for family, _, _, _, sockaddr in socket.getaddrinfo(socket.gethostname(), None):
+			if family not in (socket.AF_INET, socket.AF_INET6):
+				continue
+			address = sockaddr[0]
+			if address:
+				local_ips.add(address.split("%", maxsplit=1)[0])
+	except socket.gaierror:
+		pass
+
+	return local_ips
+
+
 def main() -> None:
 	args = parse_args()
 	args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -224,15 +274,9 @@ def main() -> None:
 		raise ValueError("--target-classes cannot be empty")
 
 	class_keywords = load_class_keywords(args.keywords_json)
+	capture_iface, capture_ifaces, capture_iface_label = resolve_capture_interfaces(args.iface)
 
-	local_ips: set[str] = set()
-	try:
-		iface_ip = get_if_addr(args.iface)
-		if iface_ip:
-			local_ips.add(iface_ip)
-	except Exception:
-		pass
-	local_ips.update({"127.0.0.1", "::1"})
+	local_ips = collect_local_ips(capture_ifaces)
 
 	active_flows: dict[FlowKey, FlowRecord] = {}
 	completed_flows: list[FlowRecord] = []
@@ -310,15 +354,20 @@ def main() -> None:
 		flush_idle(force=False)
 
 	sniff_kwargs = {
-		"iface": args.iface,
 		"prn": on_packet,
 		"store": False,
 		"timeout": args.duration,
 	}
+	if capture_iface is not None:
+		sniff_kwargs["iface"] = capture_iface
 	if args.bpf_filter:
 		sniff_kwargs["filter"] = args.bpf_filter
 
-	print(f"[collector] start capture iface={args.iface}, duration={args.duration}s")
+	if capture_iface_label == "any":
+		iface_display = f"any ({', '.join(capture_ifaces)})"
+	else:
+		iface_display = capture_iface_label
+	print(f"[collector] start capture iface={iface_display}, duration={args.duration}s")
 	sniff(**sniff_kwargs)
 	flush_idle(force=True)
 
@@ -415,6 +464,7 @@ def main() -> None:
 		"capture_started_at": datetime.fromtimestamp(capture_start).isoformat(),
 		"capture_duration_sec": args.duration,
 		"iface": args.iface,
+		"resolved_ifaces": capture_ifaces,
 		"bpf_filter": args.bpf_filter,
 		"target_classes": target_classes,
 		"packet_csv": str(packet_path),
