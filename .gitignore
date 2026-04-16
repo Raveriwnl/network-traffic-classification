@@ -138,6 +138,7 @@ celerybeat.pid
 .env
 .envrc
 .venv
+backend/local.connection.json
 env/
 venv/
 ENV/
@@ -211,3 +212,6 @@ datasets/
 
 # Training models
 training/models/
+
+# Documentation
+docs/
