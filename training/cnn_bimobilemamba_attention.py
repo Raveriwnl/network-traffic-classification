@@ -118,10 +118,16 @@ class BidirectionalMobileMambaLayer(nn.Module):
 
 
 class MobileMambaBlock(nn.Module):
-    def __init__(self, d_model=64, d_state=16, dropout=0.15, drop_path=0.0):
+    def __init__(self, d_model=64, d_state=16, d_conv=3, expand=2, dropout=0.15, drop_path=0.0):
         super().__init__()
         self.norm1 = nn.LayerNorm(d_model)
-        self.ssm = BidirectionalMobileMambaLayer(d_model=d_model, d_state=d_state, dropout=dropout)
+        self.ssm = BidirectionalMobileMambaLayer(
+            d_model=d_model,
+            d_state=d_state,
+            d_conv=d_conv,
+            expand=expand,
+            dropout=dropout,
+        )
         self.drop1 = nn.Dropout(dropout)
         self.drop_path1 = DropPath(drop_path)
         self.layer_scale1 = nn.Parameter(torch.ones(d_model) * 1e-3)
@@ -208,6 +214,9 @@ class CNNBiMobileMambaAttention(nn.Module):
         input_shape=(1000, 10),
         num_classes=8,
         num_mamba_layers=2,
+        mamba_d_state=16,
+        mamba_d_conv=3,
+        mamba_expand=2,
         mamba_dropout=0.15,
         stem_dropout=0.1,
         head_dropout=0.25,
@@ -221,6 +230,12 @@ class CNNBiMobileMambaAttention(nn.Module):
             raise ValueError("Expected input_shape=(1000, 10) based on current feature design")
         if num_mamba_layers not in (1, 2, 3):
             raise ValueError("num_mamba_layers must be 1, 2, or 3")
+        if int(mamba_d_state) <= 0:
+            raise ValueError("mamba_d_state must be a positive integer")
+        if int(mamba_d_conv) <= 0 or int(mamba_d_conv) % 2 == 0:
+            raise ValueError("mamba_d_conv must be a positive odd integer")
+        if float(mamba_expand) <= 0:
+            raise ValueError("mamba_expand must be positive")
 
         self.feature_extractor = CNNFeatureExtractor(in_channels=10, stem_dropout=stem_dropout)
 
@@ -229,7 +244,9 @@ class CNNBiMobileMambaAttention(nn.Module):
             [
                 MobileMambaBlock(
                     d_model=64,
-                    d_state=16,
+                    d_state=int(mamba_d_state),
+                    d_conv=int(mamba_d_conv),
+                    expand=float(mamba_expand),
                     dropout=mamba_dropout,
                     drop_path=drop_path_values[i],
                 )
@@ -270,6 +287,9 @@ def build_cnn_bimobilemamba_attention_model(
     input_shape=(1000, 10),
     num_classes=8,
     num_mamba_layers=2,
+    mamba_d_state=16,
+    mamba_d_conv=3,
+    mamba_expand=2,
     mamba_dropout=0.15,
     stem_dropout=0.1,
     head_dropout=0.25,
@@ -281,6 +301,9 @@ def build_cnn_bimobilemamba_attention_model(
         input_shape=input_shape,
         num_classes=num_classes,
         num_mamba_layers=num_mamba_layers,
+        mamba_d_state=mamba_d_state,
+        mamba_d_conv=mamba_d_conv,
+        mamba_expand=mamba_expand,
         mamba_dropout=mamba_dropout,
         stem_dropout=stem_dropout,
         head_dropout=head_dropout,

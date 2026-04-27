@@ -212,6 +212,10 @@ datasets/
 
 # Training models
 training/models/
+training/experiment_results/
 
 # Documentation
 docs/
+
+# Visualization outputs
+visualization/outputs/
