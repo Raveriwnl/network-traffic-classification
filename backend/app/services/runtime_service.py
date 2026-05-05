@@ -7,7 +7,6 @@ from backend.app.schemas.admin import CaptureStartRequest
 from backend.app.services.audit_service import AuditService
 from backend.app.services.database_service import DatabaseService
 from backend.app.services.collector_service import CollectorService
-from backend.app.services.elastic_log_service import ElasticModelLogService
 from backend.app.services.telemetry_service import TelemetryService
 
 
@@ -17,14 +16,12 @@ class RuntimeService:
         telemetry_service: TelemetryService,
         audit_service: AuditService,
         database_service: DatabaseService,
-        elastic_log_service: ElasticModelLogService,
         collector_service: CollectorService,
         interval_sec: float,
     ) -> None:
         self.telemetry_service = telemetry_service
         self.audit_service = audit_service
         self.database_service = database_service
-        self.elastic_log_service = elastic_log_service
         self.collector_service = collector_service
         self.interval_sec = interval_sec
         self._task: asyncio.Task[None] | None = None
@@ -120,15 +117,14 @@ class RuntimeService:
 
     def _run_cleanup(self) -> None:
         db_result = self.database_service.cleanup_expired_data()
-        deleted_model_logs = self.elastic_log_service.cleanup_expired_logs()
-        if any(db_result.values()) or deleted_model_logs:
+        if any(db_result.values()):
             self.audit_service.append(
                 level="info",
                 action="retention_cleanup",
                 message=(
                     f"Cleanup completed: capture_sessions={db_result['deleted_capture_sessions']}, "
                     f"predictions={db_result['deleted_predictions']}, logs={db_result['deleted_logs']}, "
-                    f"files={db_result['deleted_files']}, model_logs={deleted_model_logs}"
+                    f"files={db_result['deleted_files']}"
                 ),
                 actor="system",
                 role="service",

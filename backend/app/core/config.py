@@ -46,10 +46,6 @@ class Settings:
     auth_salt: str
     telemetry_interval_sec: float
     postgres_dsn: str
-    elasticsearch_url: str | None
-    elasticsearch_index: str
-    elasticsearch_username: str | None
-    elasticsearch_password: str | None
     cleanup_interval_sec: float
     data_retention_days: int
     other_traffic_threshold: float
@@ -78,7 +74,6 @@ class Settings:
     def from_env(cls) -> "Settings":
         local_config = _load_local_connection_config()
         postgres_config = local_config.get("postgres") if isinstance(local_config.get("postgres"), dict) else {}
-        elasticsearch_config = local_config.get("elasticsearch") if isinstance(local_config.get("elasticsearch"), dict) else {}
         capture_config = local_config.get("capture") if isinstance(local_config.get("capture"), dict) else {}
         origins_raw = os.getenv(
             "BACKEND_FRONTEND_ORIGINS",
@@ -104,35 +99,12 @@ class Settings:
             postgres_dsn = f"postgresql://{username}:{password}@{host}:{port}/{database}"
         if postgres_dsn is None:
             postgres_dsn = "postgresql://postgres:postgres@127.0.0.1:5432/network_traffic_classification"
-
-        elasticsearch_url = _coalesce(
-            elasticsearch_config.get("url") if isinstance(elasticsearch_config, dict) else None,
-            os.getenv("BACKEND_ELASTICSEARCH_URL"),
-            "http://127.0.0.1:9200",
-        )
-        elasticsearch_index = _coalesce(
-            elasticsearch_config.get("index") if isinstance(elasticsearch_config, dict) else None,
-            os.getenv("BACKEND_ELASTICSEARCH_INDEX"),
-            "model-inference-logs",
-        )
-        elasticsearch_username = _coalesce(
-            elasticsearch_config.get("username") if isinstance(elasticsearch_config, dict) else None,
-            os.getenv("BACKEND_ELASTICSEARCH_USERNAME"),
-        )
-        elasticsearch_password = _coalesce(
-            elasticsearch_config.get("password") if isinstance(elasticsearch_config, dict) else None,
-            os.getenv("BACKEND_ELASTICSEARCH_PASSWORD"),
-        )
         return cls(
             jwt_secret=os.getenv("BACKEND_JWT_SECRET", "edge-traffic-demo-secret"),
             jwt_expire_minutes=int(os.getenv("BACKEND_JWT_EXPIRE_MINUTES", "480")),
             auth_salt=os.getenv("BACKEND_AUTH_SALT", "edge-traffic-service"),
             telemetry_interval_sec=float(os.getenv("BACKEND_TELEMETRY_INTERVAL_SEC", "1.0")),
             postgres_dsn=str(postgres_dsn),
-            elasticsearch_url=None if elasticsearch_url is None else str(elasticsearch_url),
-            elasticsearch_index=str(elasticsearch_index),
-            elasticsearch_username=None if elasticsearch_username is None else str(elasticsearch_username),
-            elasticsearch_password=None if elasticsearch_password is None else str(elasticsearch_password),
             cleanup_interval_sec=float(os.getenv("BACKEND_CLEANUP_INTERVAL_SEC", "600")),
             data_retention_days=int(os.getenv("BACKEND_DATA_RETENTION_DAYS", "30")),
             other_traffic_threshold=float(os.getenv("BACKEND_OTHER_TRAFFIC_THRESHOLD", "0.45")),

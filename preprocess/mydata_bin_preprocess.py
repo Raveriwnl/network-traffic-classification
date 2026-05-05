@@ -132,6 +132,12 @@ def split_flow_into_segments(flow_df: pd.DataFrame, window_ms: float) -> list[tu
     return segments
 
 
+def normalize_mydata_direction_for_features(flow_df: pd.DataFrame) -> pd.DataFrame:
+    normalized = flow_df.copy()
+    normalized["direction"] = 1 - normalized["direction"].astype(np.int8)
+    return normalized
+
+
 def output_prefix(class_names: list[str], bins: int) -> str:
     return f"mydata_{'_'.join(class_names)}_5s_{bins}bins"
 
@@ -199,7 +205,11 @@ def main() -> None:
                 for segment_index, segment_start_ms, segment_packets in split_flow_into_segments(
                     flow_packets, window_ms=args.window_ms
                 ):
-                    tensor = build_flow_tensor(segment_packets, bins=args.bins, window_ms=args.window_ms)
+                    tensor = build_flow_tensor(
+                        normalize_mydata_direction_for_features(segment_packets),
+                        bins=args.bins,
+                        window_ms=args.window_ms,
+                    )
                     segment_end_ms = segment_start_ms + int(segment_packets["arrive_time"].max())
 
                     x_tensors.append(tensor)

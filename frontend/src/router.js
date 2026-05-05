@@ -3,9 +3,10 @@ import { initializeAuth, isAuthenticated, refreshProfile, useAuth } from './auth
 import LoginView from './views/LoginView.vue';
 import DashboardView from './views/DashboardView.vue';
 import AdminLogsView from './views/AdminLogsView.vue';
+import AdminUsersView from './views/AdminUsersView.vue';
 
 function getHomeRouteForRole(role) {
-  return role === 'admin' ? { name: 'admin-logs' } : { name: 'dashboard' };
+  return { name: 'dashboard' };
 }
 
 const routes = [
@@ -33,6 +34,15 @@ const routes = [
     path: '/admin/logs',
     name: 'admin-logs',
     component: AdminLogsView,
+    meta: {
+      requiresAuth: true,
+      roles: ['admin']
+    }
+  },
+  {
+    path: '/admin/users',
+    name: 'admin-users',
+    component: AdminUsersView,
     meta: {
       requiresAuth: true,
       roles: ['admin']
@@ -68,10 +78,6 @@ router.beforeEach(async (to) => {
 
   if (to.meta.guestOnly && isAuthenticated()) {
     return getHomeRouteForRole(auth.user?.role);
-  }
-
-  if (to.name === 'dashboard' && auth.user?.role === 'admin') {
-    return { name: 'admin-logs' };
   }
 
   if (to.meta.roles?.length && !to.meta.roles.includes(auth.user?.role)) {

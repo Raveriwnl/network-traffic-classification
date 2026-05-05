@@ -473,11 +473,11 @@ def collect_traffic(
 		flow = active_flows[key]
 
 		arrive_ms = int(round((timestamp - flow.first_seen) * 1000.0))
-		direction = 1 if src_ip in local_ips else 0
+		direction = 0 if src_ip in local_ips else 1
 		pkt_len = int(len(pkt))
 		flow.packets.append((arrive_ms, direction, pkt_len))
 
-		if direction == 1:
+		if direction == 0:
 			flow.uplink_packets += 1
 			flow.uplink_bytes += pkt_len
 		else:

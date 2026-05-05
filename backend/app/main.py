@@ -1,7 +1,16 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
+import sys
 from uuid import uuid4
+
+
+if __package__ in {None, ""}:
+    repo_root = Path(__file__).resolve().parents[2]
+    repo_root_str = str(repo_root)
+    if repo_root_str not in sys.path:
+        sys.path.insert(0, repo_root_str)
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +24,6 @@ from backend.app.services.auth_service import AuthService
 from backend.app.services.collector_service import CollectorService
 from backend.app.services.container import ServiceContainer
 from backend.app.services.database_service import DatabaseService
-from backend.app.services.elastic_log_service import ElasticModelLogService
 from backend.app.services.flow_service import FlowService
 from backend.app.services.model_service import ModelService
 from backend.app.services.runtime_service import RuntimeService
@@ -25,17 +33,15 @@ from backend.app.services.telemetry_service import TelemetryService
 def build_services() -> ServiceContainer:
     settings = Settings.from_env()
     database_service = DatabaseService(settings)
-    elastic_log_service = ElasticModelLogService(settings)
     audit_service = AuditService(database_service=database_service)
     flow_service = FlowService(settings, database_service)
     model_service = ModelService(settings, flow_service.class_names)
-    collector_service = CollectorService(settings, audit_service, database_service, elastic_log_service, model_service)
-    telemetry_service = TelemetryService(settings, flow_service, database_service, elastic_log_service)
+    collector_service = CollectorService(settings, audit_service, database_service, model_service)
+    telemetry_service = TelemetryService(settings, flow_service, database_service)
     runtime_service = RuntimeService(
         telemetry_service,
         audit_service,
         database_service,
-        elastic_log_service,
         collector_service,
         settings.telemetry_interval_sec,
     )
@@ -51,7 +57,6 @@ def build_services() -> ServiceContainer:
     return ServiceContainer(
         settings=settings,
         database_service=database_service,
-        elastic_log_service=elastic_log_service,
         audit_service=audit_service,
         auth_service=auth_service,
         collector_service=collector_service,
@@ -71,7 +76,6 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await services.runtime_service.stop()
-        services.elastic_log_service.close()
         services.database_service.close()
 
 
@@ -164,3 +168,9 @@ async def telemetry_websocket(websocket: WebSocket) -> None:
             role=user.role,
             ip=client,
         )
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=8000)

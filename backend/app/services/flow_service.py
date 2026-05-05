@@ -35,7 +35,7 @@ class FlowService:
         packet_summary = [
             {
                 "arrive_time_ms": row["arrive_time_ms"],
-                "direction": "uplink" if row["direction"] == 1 else "downlink",
+                "direction": "uplink" if row["direction"] == 0 else "downlink",
                 "pkt_len": row["pkt_len"],
             }
             for row in packet_rows

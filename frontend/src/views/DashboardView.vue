@@ -7,6 +7,8 @@ import { clearAuth, useAuth } from '../auth';
 import { apiFetch } from '../services/api';
 import { createTelemetrySocket } from '../services/wsClient';
 
+const MONITOR_STORAGE_KEY = 'dashboard.monitorEnabled';
+
 const router = useRouter();
 const auth = useAuth();
 
@@ -27,6 +29,7 @@ const classLabels = classes.reduce((acc, item) => {
 }, {});
 
 const state = reactive({
+  monitorEnabled: true,
   socketStatus: 'connecting',
   latestPrediction: '-',
   latestConfidence: 0,
@@ -54,10 +57,31 @@ let packetChart = null;
 let pieChart = null;
 let socketController = null;
 
+function loadMonitorPreference() {
+  const storedValue = window.localStorage.getItem(MONITOR_STORAGE_KEY);
+  if (storedValue === null) {
+    return true;
+  }
+  return storedValue === 'true';
+}
+
+function persistMonitorPreference(enabled) {
+  window.localStorage.setItem(MONITOR_STORAGE_KEY, String(enabled));
+}
+
 const socketBadge = computed(() => {
+  if (!state.monitorEnabled) return 'status-off';
   if (state.socketStatus === 'connected') return 'status-ok';
   if (state.socketStatus === 'connecting') return 'status-warn';
   return 'status-off';
+});
+
+const socketStatusText = computed(() => {
+  if (!state.monitorEnabled) return '已关闭';
+  if (state.socketStatus === 'connected') return '已连接';
+  if (state.socketStatus === 'connecting') return '连接中';
+  if (state.socketStatus === 'error') return '异常';
+  return '已断开';
 });
 
 const topClass = computed(() => {
@@ -241,14 +265,29 @@ async function handleUnauthorized() {
   await router.push({ name: 'login' });
 }
 
-onMounted(async () => {
-  packetChart = echarts.init(packetChartRef.value);
-  pieChart = echarts.init(pieChartRef.value);
-  packetChart.setOption(createPacketOption());
-  pieChart.setOption(createPieOption());
+async function activateMonitoring() {
+  if (state.monitorEnabled && state.socketStatus === 'connected') {
+    return;
+  }
+  state.monitorEnabled = true;
+  persistMonitorPreference(true);
+  state.errorMessage = '';
+  await startTelemetryMonitoring();
+}
 
+function stopTelemetryMonitoring() {
+  socketController?.close();
+  socketController = null;
+  state.socketStatus = 'disconnected';
+}
+
+async function startTelemetryMonitoring() {
+  stopTelemetryMonitoring();
+  state.socketStatus = 'connecting';
   await loadInitialTelemetry();
-
+  if (!state.monitorEnabled) {
+    return;
+  }
   socketController = createTelemetrySocket({
     token: auth.token,
     onMessage: handleTelemetry,
@@ -257,12 +296,39 @@ onMounted(async () => {
     },
     onUnauthorized: handleUnauthorized
   });
+}
 
+async function toggleMonitoring() {
+  state.monitorEnabled = !state.monitorEnabled;
+  persistMonitorPreference(state.monitorEnabled);
+  state.errorMessage = '';
+  if (state.monitorEnabled) {
+    await startTelemetryMonitoring();
+    return;
+  }
+  stopTelemetryMonitoring();
+}
+
+onMounted(async () => {
+  state.monitorEnabled = loadMonitorPreference();
+  packetChart = echarts.init(packetChartRef.value);
+  pieChart = echarts.init(pieChartRef.value);
+  packetChart.setOption(createPacketOption());
+  pieChart.setOption(createPieOption());
+
+  if (state.monitorEnabled) {
+    await startTelemetryMonitoring();
+  } else {
+    state.socketStatus = 'disconnected';
+  }
+
+  window.addEventListener('dashboard:activate-monitoring', activateMonitoring);
   window.addEventListener('resize', handleResize);
 });
 
 onBeforeUnmount(() => {
   socketController?.close();
+  window.removeEventListener('dashboard:activate-monitoring', activateMonitoring);
   window.removeEventListener('resize', handleResize);
   packetChart?.dispose();
   pieChart?.dispose();
@@ -275,8 +341,21 @@ onBeforeUnmount(() => {
     title="加密流量分类实时看板"
   >
     <template #hero-actions>
-      <div class="status-pill" :class="socketBadge">
-        WebSocket: {{ state.socketStatus }}
+      <div class="panel-actions telemetry-hero-actions">
+        <div class="status-pill" :class="socketBadge">
+          WebSocket: {{ socketStatusText }}
+        </div>
+        <button
+          class="telemetry-toggle"
+          :class="{ active: state.monitorEnabled }"
+          type="button"
+          @click="toggleMonitoring"
+        >
+          <span class="telemetry-toggle-track">
+            <span class="telemetry-toggle-thumb"></span>
+          </span>
+          <span>{{ state.monitorEnabled ? '实时监控已开启' : '实时监控已关闭' }}</span>
+        </button>
       </div>
     </template>
 

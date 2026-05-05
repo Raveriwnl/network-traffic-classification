@@ -21,8 +21,12 @@ const props = defineProps({
 const auth = useAuth();
 const router = useRouter();
 
-const showDashboardLink = computed(() => auth.user?.role !== 'admin');
+const showDashboardLink = computed(() => Boolean(auth.user));
 const showAdminLink = computed(() => auth.user?.role === 'admin');
+
+function handleDashboardClick() {
+  window.dispatchEvent(new CustomEvent('dashboard:activate-monitoring'));
+}
 
 async function handleLogout() {
   clearAuth();
@@ -43,8 +47,9 @@ async function handleLogout() {
         </div>
 
         <div class="topbar-actions">
-          <RouterLink v-if="showDashboardLink" class="nav-link" :to="{ name: 'dashboard' }">实时监控</RouterLink>
+          <RouterLink v-if="showDashboardLink" class="nav-link" :to="{ name: 'dashboard' }" @click="handleDashboardClick">实时监控</RouterLink>
           <RouterLink v-if="showAdminLink" class="nav-link" :to="{ name: 'admin-logs' }">管理员日志</RouterLink>
+          <RouterLink v-if="showAdminLink" class="nav-link" :to="{ name: 'admin-users' }">用户管理</RouterLink>
           <div class="user-pill">
             <strong>{{ auth.user?.display_name || 'Unknown' }}</strong>
             <span class="muted">{{ auth.user?.role || 'guest' }}</span>

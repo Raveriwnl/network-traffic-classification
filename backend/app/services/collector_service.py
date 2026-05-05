@@ -11,7 +11,6 @@ from preprocess.huawei_bin_preprocess import build_flow_tensor
 from backend.app.core.config import Settings
 from backend.app.services.audit_service import AuditService, to_iso, utc_now
 from backend.app.services.database_service import DatabaseService
-from backend.app.services.elastic_log_service import ElasticModelLogService
 from backend.app.services.model_service import ModelService
 
 
@@ -74,13 +73,11 @@ class CollectorService:
         settings: Settings,
         audit_service: AuditService,
         database_service: DatabaseService,
-        elastic_log_service: ElasticModelLogService,
         model_service: ModelService,
     ) -> None:
         self.settings = settings
         self.audit_service = audit_service
         self.database_service = database_service
-        self.elastic_log_service = elastic_log_service
         self.model_service = model_service
         self._lock = threading.RLock()
         self._capture_next_id = 1
@@ -375,30 +372,6 @@ class CollectorService:
                     }
                 )
             db_predictions.append(prediction_payload)
-            self.elastic_log_service.log_inference_event(
-                source="capture",
-                flow_id=global_flow_id,
-                prediction_id=global_flow_id,
-                predicted_class=str(inference["class_name"]),
-                class_id=int(inference["class_id"]),
-                confidence=float(inference["confidence"]),
-                distribution=dict(inference["distribution"]),
-                inference_latency_ms=float(inference["inference_latency_ms"]),
-                device=str(inference["device"]),
-                actual_label=None,
-                packet_count=int(flow_row["packet_count"]),
-                duration_ms=int(flow_row["duration_ms"]),
-                status="succeeded",
-                timestamp=now_iso,
-                metadata={
-                    "model_name": self.settings.model_name,
-                    "model_version": self.settings.model_version,
-                    "origin": "captured",
-                    "source_flow_id": source_flow_id,
-                    "capture_session_id": session_id,
-                },
-            )
-
         self.database_service.upsert_flows(db_flows)
         self.database_service.replace_captured_packets(db_packets)
         for prediction in db_predictions:
@@ -425,7 +398,7 @@ class CollectorService:
             {
                 "flow_id": [source_flow_id for _ in packet_rows],
                 "arrive_time": [float(item["arrive_time"]) for item in packet_rows],
-                "direction": [int(item["direction"]) for item in packet_rows],
+                "direction": [1 - int(item["direction"]) for item in packet_rows],
                 "pkt_len": [int(item["pkt_len"]) for item in packet_rows],
             }
         )

@@ -7,7 +7,6 @@ from backend.app.services.audit_service import AuditService
 from backend.app.services.auth_service import AuthService
 from backend.app.services.collector_service import CollectorService
 from backend.app.services.database_service import DatabaseService
-from backend.app.services.elastic_log_service import ElasticModelLogService
 from backend.app.services.flow_service import FlowService
 from backend.app.services.model_service import ModelService
 from backend.app.services.runtime_service import RuntimeService
@@ -18,7 +17,6 @@ from backend.app.services.telemetry_service import TelemetryService
 class ServiceContainer:
     settings: Settings
     database_service: DatabaseService
-    elastic_log_service: ElasticModelLogService
     audit_service: AuditService
     auth_service: AuthService
     collector_service: CollectorService

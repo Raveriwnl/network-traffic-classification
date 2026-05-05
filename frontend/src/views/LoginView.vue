@@ -20,10 +20,9 @@ async function handleSubmit() {
 
   try {
     const user = await login(form);
-    const fallbackRoute = user.role === 'admin' ? '/admin/logs' : '/dashboard';
+    const fallbackRoute = '/dashboard';
     const redirect = String(route.query.redirect || fallbackRoute);
-    const targetRoute = user.role === 'admin' && redirect === '/dashboard' ? fallbackRoute : redirect;
-    await router.push(targetRoute);
+    await router.push(redirect);
   } catch (error) {
     errorMessage.value = error.message || '登录失败，请检查用户名和密码。';
   } finally {

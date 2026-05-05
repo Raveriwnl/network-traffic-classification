@@ -166,7 +166,9 @@ class DatabaseService:
             "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC)",
             "CREATE INDEX IF NOT EXISTS idx_capture_sessions_started_at ON capture_sessions(started_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_flows_origin_first_seen ON flows(origin, first_seen_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_flow_packets_flow_arrive_desc ON flow_packets(flow_id, arrive_time_ms DESC)",
             "CREATE INDEX IF NOT EXISTS idx_predictions_flow_predicted_at ON predictions(flow_id, predicted_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_predictions_predicted_at_desc ON predictions(predicted_at DESC)",
         ]
         with self._lock, self._connection.cursor() as cursor:
             for statement in statements:
@@ -714,41 +716,57 @@ class DatabaseService:
         with self._lock, self._connection.cursor() as cursor:
             cursor.execute(
                 """
+                WITH latest_prediction AS (
+                    SELECT
+                        p.id AS prediction_id,
+                        p.flow_id,
+                        p.predicted_class,
+                        p.confidence,
+                        p.status,
+                        p.inference_latency_ms,
+                        p.device,
+                        p.predicted_at,
+                        p.distribution_json,
+                        p.actual_label,
+                        f.duration_ms,
+                        f.packet_count
+                    FROM predictions p
+                    INNER JOIN flows f ON f.flow_id = p.flow_id
+                    WHERE f.origin = 'captured'
+                    ORDER BY p.predicted_at DESC
+                    LIMIT 1
+                )
                 SELECT
-                    p.id AS prediction_id,
-                    p.flow_id,
-                    p.predicted_class,
-                    p.confidence,
-                    p.status,
-                    p.inference_latency_ms,
-                    p.device,
-                    p.predicted_at,
-                    p.distribution_json,
-                    p.actual_label,
-                    f.duration_ms,
-                    f.packet_count,
+                    latest_prediction.prediction_id,
+                    latest_prediction.flow_id,
+                    latest_prediction.predicted_class,
+                    latest_prediction.confidence,
+                    latest_prediction.status,
+                    latest_prediction.inference_latency_ms,
+                    latest_prediction.device,
+                    latest_prediction.predicted_at,
+                    latest_prediction.distribution_json,
+                    latest_prediction.actual_label,
+                    latest_prediction.duration_ms,
+                    latest_prediction.packet_count,
                     last_packet.direction AS latest_direction,
                     last_packet.pkt_len AS latest_packet_size,
                     COALESCE(last_packet.arrive_time_ms - prev_packet.arrive_time_ms, last_packet.arrive_time_ms, 0) AS latest_iat_ms
-                FROM predictions p
-                INNER JOIN flows f ON f.flow_id = p.flow_id
+                FROM latest_prediction
                 LEFT JOIN LATERAL (
                     SELECT arrive_time_ms, direction, pkt_len
                     FROM flow_packets
-                    WHERE flow_id = p.flow_id
+                    WHERE flow_id = latest_prediction.flow_id
                     ORDER BY arrive_time_ms DESC
                     LIMIT 1
                 ) AS last_packet ON TRUE
                 LEFT JOIN LATERAL (
                     SELECT arrive_time_ms
                     FROM flow_packets
-                    WHERE flow_id = p.flow_id
+                    WHERE flow_id = latest_prediction.flow_id
                     ORDER BY arrive_time_ms DESC
                     OFFSET 1 LIMIT 1
                 ) AS prev_packet ON TRUE
-                WHERE f.origin = 'captured'
-                ORDER BY p.predicted_at DESC
-                LIMIT 1
                 """
             )
             row = cursor.fetchone()

@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from backend.app.core.config import Settings
 from backend.app.services.audit_service import to_iso
 from backend.app.services.database_service import DatabaseService
-from backend.app.services.elastic_log_service import ElasticModelLogService
 from backend.app.services.flow_service import FlowService
 
 
@@ -25,12 +24,10 @@ class TelemetryService:
         settings: Settings,
         flow_service: FlowService,
         database_service: DatabaseService,
-        elastic_log_service: ElasticModelLogService,
     ) -> None:
         self.settings = settings
         self.flow_service = flow_service
         self.database_service = database_service
-        self.elastic_log_service = elastic_log_service
         self._latest_snapshot: dict[str, object] | None = None
         self._metrics_window: deque[PredictionMetric] = deque(maxlen=256)
         self._last_prediction_id: int | None = None
@@ -72,7 +69,7 @@ class TelemetryService:
             "flow_id": int(latest_record["flow_id"]),
             "packet_size": int(latest_record.get("latest_packet_size") or 0),
             "iat": round(float(latest_record.get("latest_iat_ms") or 0.0), 3),
-            "direction": "uplink" if int(latest_record.get("latest_direction") or 0) == 1 else "downlink",
+            "direction": "uplink" if int(latest_record.get("latest_direction") or 0) == 0 else "downlink",
             "duration_ms": int(latest_record.get("duration_ms") or 0),
             "packet_count": int(latest_record.get("packet_count") or 0),
         }
