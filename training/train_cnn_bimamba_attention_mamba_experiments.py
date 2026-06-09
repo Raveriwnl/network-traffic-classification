@@ -54,7 +54,7 @@ COMMON_CONFIG = {
     "summary_metric": "test_acc",
     "report_clean_train_metrics": True,
     "num_workers": 0,
-    "results_dir": "training/experiment_results/cnn_bimamba_attention_mamba",
+    "results_dir": "training/experiment_results/cnn_bimamba_attention_mamba/round5_param_study",
     "log1p_features": [
         "pkt_count",
         "pkt_len_mean",
@@ -68,151 +68,59 @@ COMMON_CONFIG = {
 }
 
 
+BASE_MODEL_KWARGS = {
+    "num_mamba_layers": 1,
+    "mamba_d_state": 32,
+    "mamba_d_conv": 5,
+    "mamba_expand": 3,
+    "mamba_dropout": 0.16,
+    "stem_dropout": 0.10,
+    "head_dropout": 0.28,
+    "drop_path_rate": 0.10,
+    "feature_dropout": 0.06,
+    "pool_dropout": 0.06,
+}
+
+
+BASE_CONFIG_OVERRIDES = {
+    "learning_rate": 4.5e-4,
+    "weight_decay": 2e-4,
+    "scheduler_patience": 8,
+    "label_smoothing": 0.02,
+    "mixup_alpha": 0.15,
+    "mixup_prob": 0.30,
+    "input_noise_std": 0.003,
+}
+
+
+def make_experiment(name, model_overrides=None, config_overrides=None):
+    model_kwargs = copy.deepcopy(BASE_MODEL_KWARGS)
+    if model_overrides:
+        model_kwargs.update(copy.deepcopy(model_overrides))
+
+    merged_config_overrides = copy.deepcopy(BASE_CONFIG_OVERRIDES)
+    if config_overrides:
+        merged_config_overrides.update(copy.deepcopy(config_overrides))
+
+    return {
+        "name": name,
+        "model_kwargs": model_kwargs,
+        "config_overrides": merged_config_overrides,
+    }
+
+
 EXPERIMENTS = [
-    {
-        "name": "round4_base_wide_l1_s32_k5_e3_lr45",
-        "model_kwargs": {
-            "num_mamba_layers": 1,
-            "mamba_d_state": 32,
-            "mamba_d_conv": 5,
-            "mamba_expand": 3,
-            "mamba_dropout": 0.16,
-            "stem_dropout": 0.10,
-            "head_dropout": 0.28,
-            "drop_path_rate": 0.10,
-            "feature_dropout": 0.06,
-            "pool_dropout": 0.06,
-        },
-        "config_overrides": {
-            "learning_rate": 4.5e-4,
-            "weight_decay": 2e-4,
-            "scheduler_patience": 8,
-            "label_smoothing": 0.02,
-            "mixup_alpha": 0.15,
-            "mixup_prob": 0.30,
-            "input_noise_std": 0.003,
-        },
-    },
-    {
-        "name": "round4_lr40_wide_l1_s32_k5_e3",
-        "model_kwargs": {
-            "num_mamba_layers": 1,
-            "mamba_d_state": 32,
-            "mamba_d_conv": 5,
-            "mamba_expand": 3,
-            "mamba_dropout": 0.16,
-            "stem_dropout": 0.10,
-            "head_dropout": 0.28,
-            "drop_path_rate": 0.10,
-            "feature_dropout": 0.06,
-            "pool_dropout": 0.06,
-        },
-        "config_overrides": {
-            "learning_rate": 4.0e-4,
-            "weight_decay": 2e-4,
-            "scheduler_patience": 10,
-            "label_smoothing": 0.02,
-            "mixup_alpha": 0.15,
-            "mixup_prob": 0.30,
-            "input_noise_std": 0.003,
-        },
-    },
-    {
-        "name": "round4_lr50_wide_l1_s32_k5_e3",
-        "model_kwargs": {
-            "num_mamba_layers": 1,
-            "mamba_d_state": 32,
-            "mamba_d_conv": 5,
-            "mamba_expand": 3,
-            "mamba_dropout": 0.16,
-            "stem_dropout": 0.10,
-            "head_dropout": 0.28,
-            "drop_path_rate": 0.10,
-            "feature_dropout": 0.06,
-            "pool_dropout": 0.06,
-        },
-        "config_overrides": {
-            "learning_rate": 5.0e-4,
-            "weight_decay": 2e-4,
-            "scheduler_patience": 8,
-            "label_smoothing": 0.02,
-            "mixup_alpha": 0.15,
-            "mixup_prob": 0.30,
-            "input_noise_std": 0.003,
-        },
-    },
-    {
-        "name": "round4_low_reg_wide_l1_s32_k5_e3",
-        "model_kwargs": {
-            "num_mamba_layers": 1,
-            "mamba_d_state": 32,
-            "mamba_d_conv": 5,
-            "mamba_expand": 3,
-            "mamba_dropout": 0.14,
-            "stem_dropout": 0.08,
-            "head_dropout": 0.24,
-            "drop_path_rate": 0.08,
-            "feature_dropout": 0.04,
-            "pool_dropout": 0.04,
-        },
-        "config_overrides": {
-            "learning_rate": 5e-4,
-            "weight_decay": 1.5e-4,
-            "scheduler_patience": 8,
-            "label_smoothing": 0.01,
-            "mixup_alpha": 0.10,
-            "mixup_prob": 0.25,
-            "input_noise_std": 0.002,
-        },
-    },
-    {
-        "name": "round4_high_state_wide_l1_s40_k5_e3",
-        "model_kwargs": {
-            "num_mamba_layers": 1,
-            "mamba_d_state": 40,
-            "mamba_d_conv": 5,
-            "mamba_expand": 3,
-            "mamba_dropout": 0.16,
-            "stem_dropout": 0.10,
-            "head_dropout": 0.28,
-            "drop_path_rate": 0.10,
-            "feature_dropout": 0.06,
-            "pool_dropout": 0.06,
-        },
-        "config_overrides": {
-            "learning_rate": 4.5e-4,
-            "weight_decay": 2e-4,
-            "scheduler_patience": 8,
-            "label_smoothing": 0.02,
-            "mixup_alpha": 0.15,
-            "mixup_prob": 0.30,
-            "input_noise_std": 0.003,
-        },
-    },
-    {
-        "name": "round4_mid_state_wide_l1_s24_k5_e3",
-        "model_kwargs": {
-            "num_mamba_layers": 1,
-            "mamba_d_state": 24,
-            "mamba_d_conv": 5,
-            "mamba_expand": 3,
-            "mamba_dropout": 0.16,
-            "stem_dropout": 0.10,
-            "head_dropout": 0.28,
-            "drop_path_rate": 0.10,
-            "feature_dropout": 0.06,
-            "pool_dropout": 0.06,
-        },
-        "config_overrides": {
-            "learning_rate": 5e-4,
-            "weight_decay": 2e-4,
-            "scheduler_patience": 8,
-            "label_smoothing": 0.02,
-            "mixup_alpha": 0.15,
-            "mixup_prob": 0.30,
-            "input_noise_std": 0.003,
-        },
-    },
+    make_experiment("round4_base_wide_l1_s32_k5_e3_lr45"),
+    make_experiment("round5_layers_l2_s32_k5_e3", model_overrides={"num_mamba_layers": 2}),
+    make_experiment("round5_layers_l3_s32_k5_e3", model_overrides={"num_mamba_layers": 3}),
+    make_experiment("round5_state_l1_s16_k5_e3", model_overrides={"mamba_d_state": 16}),
+    make_experiment("round5_state_l1_s24_k5_e3", model_overrides={"mamba_d_state": 24}),
+    make_experiment("round5_state_l1_s40_k5_e3", model_overrides={"mamba_d_state": 40}),
+    make_experiment("round5_state_l1_s48_k5_e3", model_overrides={"mamba_d_state": 48}),
+    make_experiment("round5_kernel_l1_s32_k3_e3", model_overrides={"mamba_d_conv": 3}),
+    make_experiment("round5_kernel_l1_s32_k7_e3", model_overrides={"mamba_d_conv": 7}),
+    make_experiment("round5_expand_l1_s32_k5_e2", model_overrides={"mamba_expand": 2}),
+    make_experiment("round5_expand_l1_s32_k5_e4", model_overrides={"mamba_expand": 4}),
 ]
 
 

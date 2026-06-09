@@ -491,11 +491,30 @@ def save_representative_flow_timeseries(
     bin_edges = np.linspace(0.0, 5000.0, series_bins + 1, dtype=np.float64)
     centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
 
-    combined_output = output_dir / "huawei_representative_flow_timeseries.png"
-    if combined_output.exists():
-        combined_output.unlink()
+    def get_flow_series(flow_id: int) -> tuple[np.ndarray, np.ndarray]:
+        flow_packets = packet_df.loc[packet_df["flow_id"] == flow_id]
+        uplink_mask = is_uplink_direction(flow_packets["direction"].to_numpy(dtype=np.int8))
+        packet_lengths = flow_packets["pkt_len"].to_numpy(dtype=np.float64)
+        packet_times = flow_packets["arrive_time"].to_numpy(dtype=np.float64)
+        uplink_bytes = np.histogram(packet_times[uplink_mask], bins=bin_edges, weights=packet_lengths[uplink_mask])[0]
+        downlink_bytes = np.histogram(packet_times[~uplink_mask], bins=bin_edges, weights=packet_lengths[~uplink_mask])[0]
+        return uplink_bytes, downlink_bytes
+
+    combined_classes = ["openlive", "message"]
+    combined_rows = representative_df.loc[
+        representative_df["classification"].isin(combined_classes)
+    ].copy()
+    combined_output = representative_dir / "openlive_message_representative_flow_timeseries.png"
+
+    for class_name in combined_classes:
+        stale_output = representative_dir / f"{class_name}_representative_flow_timeseries.png"
+        if stale_output.exists():
+            stale_output.unlink()
 
     for class_name, color in zip(class_order, colors[: len(class_order)]):
+        if class_name in combined_classes:
+            continue
+
         representative_row = representative_df.loc[representative_df["classification"] == class_name]
         if representative_row.empty:
             continue
@@ -503,13 +522,7 @@ def save_representative_flow_timeseries(
         fig, axis = plt.subplots(figsize=(12, 5.5))
         flow_id = int(representative_row.iloc[0]["flow_id"])
         class_name_zh = str(representative_row.iloc[0]["classification_zh"])
-        flow_packets = packet_df.loc[packet_df["flow_id"] == flow_id]
-        uplink_mask = is_uplink_direction(flow_packets["direction"].to_numpy(dtype=np.int8))
-        packet_lengths = flow_packets["pkt_len"].to_numpy(dtype=np.float64)
-        packet_times = flow_packets["arrive_time"].to_numpy(dtype=np.float64)
-
-        uplink_bytes = np.histogram(packet_times[uplink_mask], bins=bin_edges, weights=packet_lengths[uplink_mask])[0]
-        downlink_bytes = np.histogram(packet_times[~uplink_mask], bins=bin_edges, weights=packet_lengths[~uplink_mask])[0]
+        uplink_bytes, downlink_bytes = get_flow_series(flow_id)
 
         axis.axhline(0.0, color="#3a312a", linewidth=0.9)
         axis.fill_between(centers, 0.0, uplink_bytes, step="mid", color=color, alpha=0.28)
@@ -522,6 +535,32 @@ def save_representative_flow_timeseries(
         axis.grid(axis="y")
         axis.legend(frameon=False, ncol=2, loc="upper right")
         fig.savefig(representative_dir / f"{class_name}_representative_flow_timeseries.png", dpi=180)
+        plt.close(fig)
+
+    if not combined_rows.empty:
+        fig, axes = plt.subplots(1, len(combined_rows), figsize=(8 * len(combined_rows), 4.2), sharey=True)
+        axes = np.atleast_1d(axes)
+
+        for axis, (_, row) in zip(axes, combined_rows.iterrows()):
+            class_name = str(row["classification"])
+            flow_id = int(row["flow_id"])
+            class_name_zh = str(row["classification_zh"])
+            color_index = class_order.index(class_name) if class_name in class_order else 0
+            color = colors[color_index % len(colors)]
+            uplink_bytes, downlink_bytes = get_flow_series(flow_id)
+
+            axis.axhline(0.0, color="#3a312a", linewidth=0.9)
+            axis.fill_between(centers, 0.0, uplink_bytes, step="mid", color=color, alpha=0.28)
+            axis.plot(centers, uplink_bytes, color=color, linewidth=1.6, label="上行字节")
+            axis.fill_between(centers, 0.0, -downlink_bytes, step="mid", color="#5c6770", alpha=0.2)
+            axis.plot(centers, -downlink_bytes, color="#5c6770", linewidth=1.2, label="下行字节")
+            axis.set_title(f"{class_name_zh}代表性 Flow 时序曲线\nflow_id={flow_id}", fontproperties=title_font)
+            axis.set_xlabel("5 秒窗口内时间（毫秒）")
+            axis.grid(axis="y")
+            axis.legend(frameon=False, ncol=2, loc="upper right")
+
+        axes[0].set_ylabel("每个时间箱中的字节数（上行为正，下行为负）")
+        fig.savefig(combined_output, dpi=180)
         plt.close(fig)
 
 

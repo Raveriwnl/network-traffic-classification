@@ -16,6 +16,8 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
     f1_score,
+    precision_score,
+    recall_score,
 )
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import GaussianNB
@@ -452,6 +454,8 @@ def evaluate_model(
     return {
         "accuracy": float(accuracy_score(y, y_pred)),
         "balanced_accuracy": float(balanced_accuracy_score(y, y_pred)),
+        "macro_precision": float(precision_score(y, y_pred, average="macro", zero_division=0)),
+        "macro_recall": float(recall_score(y, y_pred, average="macro", zero_division=0)),
         "macro_f1": float(f1_score(y, y_pred, average="macro")),
         "report": classification_report(
             y,
